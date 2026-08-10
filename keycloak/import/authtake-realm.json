@@ -1,0 +1,180 @@
+{
+  "realm": "authtake",
+  "displayName": "Authtake IDP",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+
+  "accessTokenLifespan": 900,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 604800,
+  "ssoSessionMaxLifespan": 604800,
+  "offlineSessionIdleTimeout": 604800,
+  "clientSessionIdleTimeout": 604800,
+  "clientSessionMaxLifespan": 604800,
+  "accessCodeLifespan": 60,
+  "revokeRefreshToken": false,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator role - full access including /api/admin/data",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "user",
+        "description": "Standard user role - access to /api/hello/secure",
+        "composite": false,
+        "clientRole": false
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "authtake-frontend",
+      "name": "Authtake Frontend (Web App)",
+      "description": "Authorization Code + PKCE flow for interactive user login",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5001/*",
+        "https://localhost:5001/*",
+        "http://localhost:5002/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5001",
+        "https://localhost:5001",
+        "http://localhost:5002"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:5001/*##https://localhost:5001/*##http://localhost:5002/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ],
+      "optionalClientScopes": ["address", "phone", "offline_access"],
+      "protocolMappers": [
+        {
+          "name": "audience-authtake-backend",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "authtake-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "authtake-backend",
+      "name": "Authtake Backend API (Resource Server)",
+      "description": "Validates JWTs only. No login flow, no token issuance.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "secret": "backend-secret-change-me-2024",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "authtake-3rdparty",
+      "name": "Authtake 3rd Party API (Service Account)",
+      "description": "Client Credentials flow for service-to-service calls",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "secret": "thirdparty-secret-change-me-2024",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": ["roles", "basic", "profile", "email"],
+      "protocolMappers": [
+        {
+          "name": "audience-authtake-backend",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "authtake-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "sefo_admin",
+      "email": "sefo_admin@authtake.local",
+      "firstName": "Sefo",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin", "user", "offline_access"]
+    },
+    {
+      "username": "sefo_user",
+      "email": "sefo_user@authtake.local",
+      "firstName": "Sefo",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "User123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "offline_access"]
+    },
+    {
+      "username": "service-account-authtake-3rdparty",
+      "enabled": true,
+      "serviceAccountClientId": "authtake-3rdparty",
+      "realmRoles": ["admin", "user"]
+    }
+  ]
+}

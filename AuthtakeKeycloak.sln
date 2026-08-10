@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{F5A7F870-F2E1-4D13-8223-B2E205285C4C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Authtake.BackendApi", "src\Authtake.BackendApi\Authtake.BackendApi.csproj", "{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6} = {F5A7F870-F2E1-4D13-8223-B2E205285C4C}
+	EndGlobalSection
+EndGlobal
