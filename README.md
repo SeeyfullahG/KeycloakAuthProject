@@ -9,7 +9,7 @@ icinde degil, Keycloak IDP uzerinde yapilir.
 |---|---------|-----------|-------|
 | 1 | Keycloak IDP + PostgreSQL | Docker Compose | ✅ PART 1 |
 | 2 | Backend API (Resource Server) | .NET 8 Web API | ✅ PART 2 |
-| 3 | Frontend (Web App) | ASP.NET Blazor Server | ⏳ PART 3 |
+| 3 | Frontend (Web App) | ASP.NET Blazor (statik SSR) | ✅ PART 3 |
 | 4 | 3rd Party API (Service Account) | .NET Console | ⏳ PART 4 |
 
 ---
@@ -146,6 +146,90 @@ Hata (401 / 403) — standart zarf:
   kabul edilir (realm'deki audience mapper'lar bunu saglar).
 - **401 vs 403 ayrimi**: `OnChallenge` (kimlik yok/gecersiz) ve `OnForbidden`
   (kimlik var, rol yetersiz) olaylari ayri ayri ele alinip JSON yaziyor.
+
+---
+
+## PART 3 — Frontend / Blazor (tamamlandi)
+
+### Dosyalar
+
+```
+src/Authtake.Frontend/
+  Auth/KeycloakOidcExtensions.cs              OIDC (Authorization Code + PKCE), rol mapping
+  Auth/HttpContextAuthenticationStateProvider.cs
+  Services/BackendApiClient.cs                Backend API'ye Bearer token ile istek
+  Components/Layout/MainLayout.razor          Role-based menu, giris/cikis
+  Components/Pages/Home.razor                 Acilis, giris butonu
+  Components/Pages/Profile.razor              Token claim'leri + cozulmus payload
+  Components/Pages/AdminPanel.razor           Sadece admin
+  Components/Pages/ApiTest.razor              200/401/403 canli deneme
+  Components/Shared/{RedirectToLogin,AccessDenied}.razor
+scripts/verify-part3.ps1                      33 uctan uca test
+```
+
+### Calistirma
+
+Uc bilesenin de ayakta olmasi gerekiyor:
+
+```powershell
+docker compose up -d                                              # Keycloak
+dotnet run --project src/Authtake.BackendApi --launch-profile http   # :5000
+dotnet run --project src/Authtake.Frontend   --launch-profile http   # :5002
+```
+
+Tarayicidan http://localhost:5002 &rarr; **Giris Yap**.
+`sefo_admin` / `Admin123!` ile `sefo_user` / `User123!` arasindaki farki gor.
+
+### Sayfalar
+
+| Adres | Kim gorebilir | Ne yapar |
+|-------|---------------|----------|
+| `/` | Herkes | Giris yapmamissa giris butonu, yapmissa karsilama + kartlar |
+| `/profile` | Giris yapmis | Token claim'leri, roller, gecerlilik suresi, cozulmus payload |
+| `/api-test` | Giris yapmis | Uc endpoint'i canli dene, 200/401/403 farkini gor |
+| `/admin` | `admin` rolu | Backend'den korumali veriyi ceker |
+| `/access-denied` | — | Rol yetersizliginde gelinen 403 sayfasi |
+
+### Dogrulama
+
+```powershell
+.\scripts\verify-part3.ps1
+```
+
+Script gercek bir tarayici gibi davranir: login endpoint'ine gider, Keycloak'a
+yonlendirilir, giris formunu doldurur, donen oturum cookie'siyle korumali
+sayfalari ister. Iki kullaniciyla da tum akisi ve cikisi test eder.
+
+### Tasarim Notlari ve Cozulen Sorunlar
+
+- **Statik SSR secildi** (interaktif circuit degil): bilesenler `HttpContext`'e
+  erisebildigi icin auth cookie'sindeki access token'a dogrudan ulasiliyor.
+  Bunun bedeli, `AuthenticationStateProvider`'i kendimizin kaydetmesi
+  (`HttpContextAuthenticationStateProvider`) &mdash; interaktif modda framework
+  bunu kendisi yapar.
+- **Roller access token'dan okunuyor**: Keycloak `realm_access.roles` bilgisini
+  varsayilan olarak yalnizca access token'a koyar, id_token'da yoktur. OIDC
+  handler kimligi id_token'dan urettigi icin roller bos kaliyordu; artik access
+  token'in govdesi ayrica ayristiriliyor.
+- **`AccessDeniedPath`**: Varsayilani `/Account/AccessDenied`. Bizde boyle bir
+  sayfa olmadigi icin rol yetersizliginde kullanici 404 goruyordu.
+- **HTTP gelistirme icin cookie ayarlari**: OIDC varsayilani, kodu siteler arasi
+  bir POST ile geri gonderir (`response_mode=form_post`) ve correlation/nonce
+  cookie'lerini `SameSite=None` yazar &mdash; bu da `Secure` (HTTPS) zorunlu kilar.
+  HTTP'de cookie dustugu icin donuste 400 aliniyordu. `response_mode=query` +
+  `SameSite=Lax` + `SecurePolicy=SameAsRequest` ile cozuldu. Uretimde HTTPS
+  altinda varsayilanlara donulmelidir.
+- **Iki katmanli koruma**: Menuden linki gizlemek yalnizca gorsel kolaylik.
+  `/admin` adresi elle yazilsa bile once frontend 403 sayfasina duser, ayrica
+  Backend API rolu bagimsiz olarak kendisi dogrular.
+
+> **Test script'i notu:** `verify-part3.ps1` HTTP isteklerini `Invoke-WebRequest`
+> yerine `HttpWebRequest` ile atar ve cookie'leri elle toplar. Iki sebep:
+> (1) Windows PowerShell 5.1, yonlendirme yanitlarindaki cookie'leri oturuma
+> aktarmaz; (2) .NET'in `CookieContainer`'i, yolu istek yolunun altinda olmayan
+> cookie'yi reddeder ve Secure cookie'yi HTTP'de gondermez &mdash; tarayicilar
+> `localhost` icin bu istisnalari tanir. Bunlar test istemcisinin sinirlari,
+> uygulamanin degil.
 
 ---
 

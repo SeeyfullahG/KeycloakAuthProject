@@ -1,0 +1,20 @@
+@* AuthorizeRouteView, sayfalardaki [Authorize] niteligini devreye sokar. *@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated is not true)
+                {
+                    @* Henuz giris yapilmamis -> Keycloak login sayfasina gonder. *@
+                    <RedirectToLogin />
+                }
+                else
+                {
+                    @* Giris yapilmis ama rol yetersiz -> 403'un arayuzdeki karsiligi. *@
+                    <AccessDenied />
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

@@ -1,0 +1,93 @@
+@page "/api-test"
+@using Microsoft.AspNetCore.Authentication
+@attribute [Authorize]
+@inject BackendApiClient Api
+
+<PageTitle>Authtake - API Testi</PageTitle>
+
+<h1>Backend API Testi</h1>
+<p class="muted">
+    Her butona bastiginda bu uygulama senin token'inla Backend API'ye gercek bir
+    istek atar ve donen HTTP durum kodunu asagida gosterir.
+</p>
+
+<div class="card">
+    <div class="btn-row">
+        <a class="btn @Selected("public")" href="/api-test?call=public">
+            /api/public/hello <small>token gerekmez</small>
+        </a>
+        <a class="btn @Selected("secure")" href="/api-test?call=secure">
+            /api/hello/secure <small>giris gerekli</small>
+        </a>
+        <a class="btn @Selected("admin")" href="/api-test?call=admin">
+            /api/admin/data <small>admin rolu gerekli</small>
+        </a>
+        <a class="btn btn--ghost @Selected("notoken")" href="/api-test?call=notoken">
+            token GONDERME <small>401 gormek icin</small>
+        </a>
+    </div>
+
+    @if (Call is null)
+    {
+        <p class="muted">Denemek icin yukaridan bir uc nokta sec.</p>
+    }
+    else if (Result is not null)
+    {
+        <h2>@Description</h2>
+        <p class="status @StatusClass">@Result.StatusText</p>
+        <pre class="token">@Result.PrettyBody</pre>
+
+        @if (Result.StatusCode == 403)
+        {
+            <p class="muted">
+                <strong>403 neden 401 degil?</strong> Token'in gecerli, API kim oldugunu
+                biliyor. Sorun kimlikte degil yetkide: <code>admin</code> rolun yok.
+            </p>
+        }
+        else if (Result.StatusCode == 401)
+        {
+            <p class="muted">
+                <strong>401</strong> = API kim oldugunu bilmiyor. Ya token hic gonderilmedi,
+                ya gecersiz, ya da suresi dolmus.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+    [SupplyParameterFromQuery(Name = "call")] private string? Call { get; set; }
+
+    private ApiCallResult? Result;
+    private string Description = string.Empty;
+
+    private string Selected(string name) => Call == name ? "btn--active" : string.Empty;
+
+    private string StatusClass => Result?.StatusCode switch
+    {
+        200 => "ok",
+        _ => "warn"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is null || Call is null) return;
+
+        var token = await HttpContext.GetTokenAsync("access_token");
+
+        (string path, string? sentToken, string description) = Call switch
+        {
+            "public"  => ("/api/public/hello", token, "GET /api/public/hello - token ile"),
+            "secure"  => ("/api/hello/secure", token, "GET /api/hello/secure - token ile"),
+            "admin"   => ("/api/admin/data",   token, "GET /api/admin/data - token ile"),
+            // Bilerek token gondermiyoruz: 401'in nasil gorundugunu gostermek icin.
+            "notoken" => ("/api/hello/secure", null,  "GET /api/hello/secure - token GONDERILMEDI"),
+            _         => (string.Empty, null, string.Empty)
+        };
+
+        if (path.Length == 0) return;
+
+        Description = description;
+        Result = await Api.GetAsync(path, sentToken);
+    }
+}

@@ -1,0 +1,154 @@
+@page "/profile"
+@using System.Text
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authentication
+@attribute [Authorize]
+
+<PageTitle>Authtake - Profilim</PageTitle>
+
+<h1>Profilim</h1>
+<p class="muted">
+    Buradaki hicbir bilgi bu uygulamanin veritabanindan gelmiyor &mdash; hepsi
+    Keycloak'in verdigi token'in icinden okunuyor.
+</p>
+
+<div class="card">
+    <h2>Kimlik bilgileri</h2>
+    <table class="table">
+        <tbody>
+            <tr><th>Kullanici adi <span class="claim">preferred_username</span></th><td>@Value("preferred_username")</td></tr>
+            <tr><th>Ad Soyad <span class="claim">name</span></th><td>@Value("name")</td></tr>
+            <tr><th>E-posta <span class="claim">email</span></th><td>@Value("email")</td></tr>
+            <tr><th>Kimlik no <span class="claim">sub</span></th><td><code>@Value("sub")</code></td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Roller</h2>
+    <p class="muted">
+        Keycloak bunlari token'da <code>realm_access.roles</code> icinde gonderiyor;
+        uygulama bunlari ASP.NET Core'un anlayacagi rol claim'lerine ceviriyor.
+    </p>
+    <p>
+        @foreach (var role in Roles)
+        {
+            <span class="badge @(role == "admin" ? "badge--admin" : "")">@role</span>
+        }
+    </p>
+    <AuthorizeView Roles="admin">
+        <Authorized><p class="ok">✔ <code>admin</code> rolun var &mdash; Admin Paneli'ne erisebilirsin.</p></Authorized>
+        <NotAuthorized><p class="warn">✖ <code>admin</code> rolun yok &mdash; Admin Paneli sana kapali.</p></NotAuthorized>
+    </AuthorizeView>
+</div>
+
+<div class="card">
+    <h2>Oturum / token durumu</h2>
+    <table class="table">
+        <tbody>
+            <tr><th>Token'i veren <span class="claim">iss</span></th><td><code>@Value("iss")</code></td></tr>
+            <tr><th>Hangi uygulama istedi <span class="claim">azp</span></th><td><code>@Value("azp")</code></td></tr>
+            <tr>
+                <th>Access token gecerlilik sonu</th>
+                <td>
+                    @if (AccessTokenExpiry is { } exp)
+                    {
+                        <span>@exp.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</span>
+                        <span class="muted"> (@RemainingText)</span>
+                    }
+                    else { <span class="muted">okunamadi</span> }
+                </td>
+            </tr>
+            <tr>
+                <th>Refresh token</th>
+                <td>
+                    @if (HasRefreshToken)
+                    {
+                        <span class="ok">mevcut</span>
+                        <span class="muted"> &mdash; access token dolunca yenisini almak icin kullanilir (PART 5)</span>
+                    }
+                    else { <span class="muted">yok</span> }
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Ham access token</h2>
+    <p class="muted">
+        Uc parcadan olusur: <strong>header</strong>.<strong>payload</strong>.<strong>signature</strong>
+        (baslik . icerik . imza). Icerik herkese acik okunabilir; degistirilemez olmasini
+        saglayan sey imzadir.
+    </p>
+    <details>
+        <summary>Token'in kendisini goster</summary>
+        <pre class="token">@AccessToken</pre>
+    </details>
+    <details open>
+        <summary>Icerigin (payload) cozulmus hali</summary>
+        <pre class="token">@DecodedPayload</pre>
+    </details>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private ClaimsPrincipal User => HttpContext?.User ?? new ClaimsPrincipal();
+    private string? AccessToken;
+    private bool HasRefreshToken;
+    private DateTimeOffset? AccessTokenExpiry;
+    private string DecodedPayload = "(token okunamadi)";
+
+    private IEnumerable<string> Roles =>
+        User.FindAll(ClaimTypes.Role).Select(c => c.Value).Distinct().OrderBy(r => r);
+
+    private string Value(string claim) =>
+        User.FindFirst(claim)?.Value is { Length: > 0 } v ? v : "-";
+
+    private string RemainingText
+    {
+        get
+        {
+            if (AccessTokenExpiry is not { } exp) return string.Empty;
+            var left = exp - DateTimeOffset.UtcNow;
+            return left <= TimeSpan.Zero
+                ? "suresi doldu"
+                : $"{(int)left.TotalMinutes} dk {left.Seconds} sn kaldi";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is null) return;
+
+        AccessToken = await HttpContext.GetTokenAsync("access_token");
+        HasRefreshToken = !string.IsNullOrEmpty(await HttpContext.GetTokenAsync("refresh_token"));
+
+        if (AccessToken is null) return;
+
+        var parts = AccessToken.Split('.');
+        if (parts.Length != 3) return;
+
+        try
+        {
+            var json = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
+            using var doc = JsonDocument.Parse(json);
+            DecodedPayload = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+
+            if (doc.RootElement.TryGetProperty("exp", out var exp) && exp.TryGetInt64(out var seconds))
+                AccessTokenExpiry = DateTimeOffset.FromUnixTimeSeconds(seconds);
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException)
+        {
+            DecodedPayload = "(token icerigi cozulemedi)";
+        }
+    }
+
+    // JWT, standart Base64 degil Base64Url kullanir: +/ yerine -_ ve sondaki = yok.
+    private static byte[] Base64UrlDecode(string input)
+    {
+        var s = input.Replace('-', '+').Replace('_', '/');
+        return Convert.FromBase64String(s.PadRight(s.Length + (4 - s.Length % 4) % 4, '='));
+    }
+}

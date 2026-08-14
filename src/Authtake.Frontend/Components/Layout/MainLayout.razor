@@ -1,0 +1,59 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark">A</span>
+            <span>Authtake</span>
+        </a>
+
+        <nav class="nav">
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">Ana Sayfa</NavLink>
+            <AuthorizeView>
+                <Authorized>
+                    <NavLink class="nav-link" href="/profile">Profilim</NavLink>
+                    <NavLink class="nav-link" href="/api-test">API Testi</NavLink>
+                </Authorized>
+            </AuthorizeView>
+
+            @* Role-based UI: admin linki yalnizca admin rolu olana gorunur. *@
+            <AuthorizeView Roles="admin">
+                <Authorized>
+                    <NavLink class="nav-link nav-link--admin" href="/admin">Admin Paneli</NavLink>
+                </Authorized>
+            </AuthorizeView>
+        </nav>
+
+        <div class="session">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="who">
+                        <strong>@context.User.Identity!.Name</strong>
+                        <AuthorizeView Roles="admin" Context="adminCtx">
+                            <Authorized><span class="badge badge--admin">admin</span></Authorized>
+                            <NotAuthorized><span class="badge">user</span></NotAuthorized>
+                        </AuthorizeView>
+                    </span>
+                    <a class="btn btn--ghost" href="/authentication/logout">Cikis Yap</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="btn" href="/authentication/login">Giris Yap</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </header>
+
+    <main class="content">
+        @Body
+    </main>
+
+    <footer class="footer">
+        Kimlik dogrulama Keycloak IDP uzerinde &mdash; realm <code>authtake</code>
+    </footer>
+</div>
+
+<div id="blazor-error-ui">
+    Beklenmeyen bir hata olustu.
+    <a href="" class="reload">Yenile</a>
+    <a class="dismiss">🗙</a>
+</div>

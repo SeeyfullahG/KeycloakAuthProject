@@ -1,0 +1,76 @@
+@page "/"
+
+<PageTitle>Authtake - Ana Sayfa</PageTitle>
+
+<h1>Keycloak IDP Demo</h1>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <div class="card">
+            <p>
+                Su anda <strong>giris yapmamis durumdasin</strong>. Asagidaki butona
+                bastiginda bu site sana sifre sormayacak &mdash; seni Keycloak'in kendi
+                giris sayfasina yonlendirecek.
+            </p>
+            <p class="muted">
+                Sifreni yalnizca Keycloak gorur. Bu uygulama sadece geri donen
+                <em>token</em>'i alir. Adres cubugunu izlersen <code>localhost:8080</code>'e
+                gidip geri geldigini gorebilirsin.
+            </p>
+            <a class="btn btn--lg" href="/authentication/login">Giris Yap</a>
+
+            <div class="hint">
+                <strong>Test kullanicilari</strong>
+                <table class="table table--compact">
+                    <thead><tr><th>Kullanici</th><th>Sifre</th><th>Roller</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>sefo_admin</code></td><td><code>Admin123!</code></td><td>admin, user</td></tr>
+                        <tr><td><code>sefo_user</code></td><td><code>User123!</code></td><td>user</td></tr>
+                    </tbody>
+                </table>
+                <p class="muted">
+                    Ikisiyle de girip menudeki farki gorebilirsin: <em>Admin Paneli</em>
+                    linki yalnizca <code>sefo_admin</code>'e gorunur.
+                </p>
+            </div>
+        </div>
+    </NotAuthorized>
+
+    <Authorized>
+        <div class="card card--ok">
+            <h2>Hos geldin, @(context.User.FindFirst("name")?.Value ?? context.User.Identity!.Name)</h2>
+            <p>
+                Giris yaptin. Tarayicinda artik bir oturum cookie'si var ve bu uygulama
+                senin adina Backend API'ye gidebilecegi bir <strong>access token</strong> tutuyor.
+            </p>
+        </div>
+
+        <div class="grid">
+            <a class="tile" href="/profile">
+                <h3>Profilim</h3>
+                <p>Token'in icindeki bilgileri (claim'leri) oldugu gibi gor.</p>
+            </a>
+            <a class="tile" href="/api-test">
+                <h3>API Testi</h3>
+                <p>Backend API'nin uc ucunu dene, 200/401/403 farkini canli gor.</p>
+            </a>
+            <AuthorizeView Roles="admin" Context="adminCtx">
+                <Authorized>
+                    <a class="tile tile--admin" href="/admin">
+                        <h3>Admin Paneli</h3>
+                        <p>Yalnizca <code>admin</code> rolu olanlara gorunur.</p>
+                    </a>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="tile tile--locked">
+                        <h3>Admin Paneli 🔒</h3>
+                        <p>
+                            <code>admin</code> rolun olmadigi icin bu kart kilitli.
+                            Adresi elle yazsan bile 403 alirsin.
+                        </p>
+                    </div>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </Authorized>
+</AuthorizeView>

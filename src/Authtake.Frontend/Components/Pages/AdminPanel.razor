@@ -1,0 +1,49 @@
+@page "/admin"
+@using Microsoft.AspNetCore.Authentication
+@attribute [Authorize(Roles = "admin")]
+@inject BackendApiClient Api
+
+<PageTitle>Authtake - Admin Paneli</PageTitle>
+
+<h1>Admin Paneli</h1>
+<div class="card card--admin">
+    <p>
+        Bu sayfaya girebildiysen token'inda <code>admin</code> rolu var demektir.
+        <code>sefo_user</code> ile <code>/admin</code> adresini elle yazsan bile
+        buraya degil, 403 sayfasina duserdin.
+    </p>
+    <p class="muted">
+        Onemli nokta: bu koruma <strong>iki katmanli</strong>. Menuden linki gizlemek
+        yalnizca gorsel bir kolaylik &mdash; asil koruma Backend API'de. Asagidaki veri
+        API'den <code>Authorization: Bearer &lt;token&gt;</code> basligiyla cekiliyor ve
+        API rolu kendisi dogruluyor.
+    </p>
+</div>
+
+<div class="card">
+    <h2>Backend'den gelen korumali veri</h2>
+    <p class="muted"><code>GET /api/admin/data</code></p>
+
+    @if (Result is null)
+    {
+        <p class="muted">Yukleniyor...</p>
+    }
+    else
+    {
+        <p class="@(Result.Succeeded ? "ok" : "warn")">@Result.StatusText</p>
+        <pre class="token">@Result.PrettyBody</pre>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private ApiCallResult? Result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is null) return;
+        var token = await HttpContext.GetTokenAsync("access_token");
+        Result = await Api.GetAsync("/api/admin/data", token);
+    }
+}
