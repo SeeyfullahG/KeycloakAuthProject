@@ -46,8 +46,8 @@
     <h2>Oturum / token durumu</h2>
     <table class="table">
         <tbody>
-            <tr><th>Token'i veren <span class="claim">iss</span></th><td><code>@Value("iss")</code></td></tr>
-            <tr><th>Hangi uygulama istedi <span class="claim">azp</span></th><td><code>@Value("azp")</code></td></tr>
+            <tr><th>Token'i veren <span class="claim">iss</span></th><td><code>@TokenValue("iss")</code></td></tr>
+            <tr><th>Hangi uygulama istedi <span class="claim">azp</span></th><td><code>@TokenValue("azp")</code></td></tr>
             <tr>
                 <th>Access token gecerlilik sonu</th>
                 <td>
@@ -106,6 +106,16 @@
     private string Value(string claim) =>
         User.FindFirst(claim)?.Value is { Length: > 0 } v ? v : "-";
 
+    /// <summary>
+    /// Access token'in govdesinden dogrudan okur. iss/azp gibi protokol
+    /// claim'leri kimlige aktarilmaz (OIDC handler bunlari kaldirir), bu yuzden
+    /// User.FindFirst ile bulunamazlar.
+    /// </summary>
+    private string TokenValue(string claim) =>
+        TokenClaims.TryGetValue(claim, out var v) && v.Length > 0 ? v : "-";
+
+    private readonly Dictionary<string, string> TokenClaims = [];
+
     private string RemainingText
     {
         get
@@ -138,6 +148,13 @@
 
             if (doc.RootElement.TryGetProperty("exp", out var exp) && exp.TryGetInt64(out var seconds))
                 AccessTokenExpiry = DateTimeOffset.FromUnixTimeSeconds(seconds);
+
+            foreach (var name in (string[])["iss", "azp"])
+            {
+                if (doc.RootElement.TryGetProperty(name, out var element)
+                    && element.ValueKind is JsonValueKind.String)
+                    TokenClaims[name] = element.GetString() ?? string.Empty;
+            }
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
