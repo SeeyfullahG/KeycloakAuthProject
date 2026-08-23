@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -21,6 +23,9 @@ public sealed class KeycloakOptions
 public static class KeycloakOidcExtensions
 {
     public const string AdminPolicy = "RequireAdminRole";
+
+    /// <summary>Access token'i dolmadan bu kadar once yenile.</summary>
+    private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(1);
 
     public static IServiceCollection AddKeycloakOidcAuthentication(
         this IServiceCollection services, IConfiguration configuration)
@@ -48,6 +53,11 @@ public static class KeycloakOidcExtensions
             // /Account/AccessDenied adresine yonlendirir; bizde boyle bir sayfa
             // olmadigi icin kullanici 404 gorurdu. Kendi 403 sayfamiza gonderiyoruz.
             options.AccessDeniedPath = "/access-denied";
+
+            // PART 5 - otomatik token yenileme.
+            // Her istekte cookie dogrulanirken calisir; access token'in omru
+            // dolmak uzereyse refresh token ile sessizce yenilenir.
+            options.Events.OnValidatePrincipal = RefreshAccessTokenIfNeeded;
         })
         .AddOpenIdConnect(options =>
         {
@@ -104,6 +114,77 @@ public static class KeycloakOidcExtensions
             .AddPolicy(AdminPolicy, p => p.RequireAuthenticatedUser().RequireRole("admin"));
 
         return services;
+    }
+
+    /// <summary>
+    /// Access token'in suresi dolmak uzereyse refresh token ile yeniler ve
+    /// yeni token'lari oturum cookie'sine yazar. Kullanici bunu hic fark etmez.
+    ///
+    /// Yenileme basarisiz olursa (refresh token'in de suresi dolmus, ya da
+    /// kullanici Keycloak tarafinda cikis yapmis) oturum sonlandirilir; bir
+    /// sonraki korumali sayfa istegi kullaniciyi giris ekranina goturur.
+    /// </summary>
+    private static async Task RefreshAccessTokenIfNeeded(CookieValidatePrincipalContext context)
+    {
+        var expiresAt = context.Properties.GetTokenValue("expires_at");
+        if (!DateTimeOffset.TryParse(expiresAt, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out var expiry))
+        {
+            return; // Token saklanmamis; yapacak bir sey yok.
+        }
+
+        // Tam dolma anini beklemiyoruz: istek yoldayken gecersizlesmesin diye
+        // son bir dakikada onden yeniliyoruz.
+        if (DateTimeOffset.UtcNow < expiry - RefreshMargin) return;
+
+        var services = context.HttpContext.RequestServices;
+        var logger = services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(KeycloakOidcExtensions));
+
+        var refreshToken = context.Properties.GetTokenValue("refresh_token");
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            logger.LogInformation("Access token doldu ve refresh token yok; oturum kapatiliyor.");
+            await SignOutAsync(context);
+            return;
+        }
+
+        var userKey = context.Principal?.FindFirstValue("sub") ?? refreshToken;
+        var refreshed = await services.GetRequiredService<TokenRefreshService>()
+            .RefreshAsync(refreshToken, userKey);
+
+        if (refreshed is null)
+        {
+            logger.LogInformation("Token yenilenemedi; oturum kapatiliyor.");
+            await SignOutAsync(context);
+            return;
+        }
+
+        // Yeni token'lari sakla. Rotasyon acik oldugu icin refresh token da
+        // degisir; eskisini saklamak bir sonraki yenilemeyi bozardi.
+        var tokens = new List<AuthenticationToken>
+        {
+            new() { Name = "access_token", Value = refreshed.AccessToken },
+            new() { Name = "expires_at", Value = refreshed.ExpiresAt.ToString("o", CultureInfo.InvariantCulture) },
+            new() { Name = "refresh_token", Value = refreshed.RefreshToken ?? refreshToken }
+        };
+
+        var idToken = refreshed.IdToken ?? context.Properties.GetTokenValue("id_token");
+        if (!string.IsNullOrWhiteSpace(idToken))
+            tokens.Add(new AuthenticationToken { Name = "id_token", Value = idToken });
+
+        context.Properties.StoreTokens(tokens);
+
+        // Cookie'nin guncellenmis haliyle yeniden yazilmasini istiyoruz.
+        context.ShouldRenew = true;
+
+        logger.LogInformation("Access token yenilendi; yeni gecerlilik: {Expiry:o}", refreshed.ExpiresAt);
+    }
+
+    private static async Task SignOutAsync(CookieValidatePrincipalContext context)
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
     /// <summary>

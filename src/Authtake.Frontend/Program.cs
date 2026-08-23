@@ -17,6 +17,19 @@ builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddKeycloakOidcAuthentication(builder.Configuration);
 
+// PART 5 - otomatik token yenileme.
+// Onbellek, ayni anda gelen isteklerin ayni refresh token'i tekrar tekrar
+// kullanmaya calismasini engellemek icin (rotasyon acik oldugundan bu ikinci
+// deneme reddedilir ve kullanici bosuna disari atilirdi).
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<TokenRefreshService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(15));
+
+// PART 5 - otomatik token yenileme icin gerekli.
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<TokenRefreshService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(15));
+
 builder.Services.AddHttpClient<BackendApiClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["BackendApi:BaseUrl"]

@@ -11,6 +11,7 @@ icinde degil, Keycloak IDP uzerinde yapilir.
 | 2 | Backend API (Resource Server) | .NET 8 Web API | ✅ PART 2 |
 | 3 | Frontend (Web App) | ASP.NET Blazor (statik SSR) | ✅ PART 3 |
 | 4 | 3rd Party API (Service Account) | .NET 8 Console | ✅ PART 4 |
+| 5 | Token yonetimi (otomatik yenileme) | Frontend + Keycloak | ✅ PART 5 |
 
 ---
 
@@ -318,6 +319,84 @@ akisin kendisinin de calistigini.
   verir, ayristirici iki durumu da karsilar.
 - **Cikis kodu**: Uygulama basarisiz kontrol varsa 1 doner. Bir demo programini
   test edilebilir hale getiren en ucuz yontem.
+
+---
+
+## PART 5 — Token Yonetimi / Otomatik Yenileme (tamamlandi)
+
+Access token 15 dakika yasar. PART 5'ten once bunun sonucu su idi: 15 dakika
+sonra kullanici arayuzde hala "giris yapmis" gorunuyor (oturum cookie'si 7 gun
+gecerli) ama Backend cagrilari **401 donmeye basliyordu.**
+
+Artik uygulama, token'in omru dolmadan **1 dakika once** refresh token ile
+sessizce yenisini aliyor. Kullanici bunu hic fark etmiyor.
+
+### Dosyalar
+
+```
+src/Authtake.Frontend/
+  Auth/TokenRefreshService.cs        Yenileme cagrisi + paralel istek koordinasyonu
+  Auth/KeycloakOidcExtensions.cs     OnValidatePrincipal icinde yenileme tetigi
+scripts/verify-part5.ps1             16 test
+```
+
+### Nasil calisiyor
+
+Yenileme, cookie her dogrulandiginda (yani her istekte) kontrol edilir:
+
+```
+Istek gelir
+   -> Cookie cozulur, icindeki 'expires_at' okunur
+   -> Suresi dolmaya 1 dk'dan az mi kaldi?
+        Hayir -> devam
+        Evet  -> refresh token ile Keycloak'tan yeni token al
+                   Basarili -> yeni token'lari cookie'ye yaz, devam
+                   Basarisiz -> oturumu kapat, giris ekranina gonder
+```
+
+Bu, `CookieAuthenticationEvents.OnValidatePrincipal` uzerine kurulu; ayri bir
+zamanlayici ya da arka plan isi yok. Yenilenen token'lar `StoreTokens` ile
+cookie'ye yazilir ve `ShouldRenew = true` ile cookie yeniden gonderilir.
+
+### Paralel istek sorunu ve cozumu
+
+Realm'de refresh token rotasyonu acik: her yenilemede yeni bir refresh token
+verilir ve **eskisi aninda gecersizlesir.** Bir sayfa ayni anda birkac istek
+atarsa hepsi ellerindeki ayni eski refresh token ile yenilemeye kalkar; ilki
+basarili olur, digerleri reddedilir ve kullanici bosuna disari atilir.
+
+Iki onlem birlikte kullaniliyor:
+
+| Onlem | Ne yapar |
+|-------|----------|
+| Kullanici basina kilit (`SemaphoreSlim`) | Ayni anda yalnizca bir yenileme calisir |
+| 30 saniyelik onbellek | Yarisi kaybeden istek, kazananin aldigi token'lari onbellekten okur; tekrar denemez |
+
+Onbellek anahtari **eski** refresh token'dir: ayni eski token'la gelen her istek
+ayni yeni token setine ulasir.
+
+### Dogrulama
+
+```powershell
+.\scripts\verify-part5.ps1
+```
+
+Test 15 dakika beklemek yerine realm'in `accessTokenLifespan` degerini admin API
+ile **gecici olarak 40 saniyeye** dusurur, token'in gercekten eskimesini bekler,
+sonra ayari geri alir. Dogruladiklari:
+
+| Kontrol | Beklenen |
+|---------|----------|
+| Bekleme sonrasi profil sayfasi | Gecerlilik sonu ILERI tasinmis |
+| Kullanici durumu | Hala giris yapmis (disari atilmamis) |
+| `/api/hello/secure` ve `/api/admin/data` | 200 OK &mdash; yenilenen token Backend'de gecerli |
+| Keycloak'ta oturum sonlandirilirsa | Yenileme reddedilir, kullanici giris ekranina yonlendirilir |
+| Test sonrasi realm | `accessTokenLifespan` eski degerine doner |
+
+Son madde onemli: ayar geri alinmazsa hem uygulama hem diger testler
+kisaltilmis token omruyle calismaya devam ederdi. Temizlik `finally` blogunda
+ve admin token'i orada **tazeleniyor** &mdash; master realm'de admin token'inin
+varsayilan omru 60 saniye, test ise iki kez ~50 saniye bekliyor.
 
 ---
 
