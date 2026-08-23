@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Authtake.BackendApi", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Authtake.Frontend", "src\Authtake.Frontend\Authtake.Frontend.csproj", "{13434EA4-7467-46E5-956A-4985A38FC515}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Authtake.ThirdPartyClient", "src\Authtake.ThirdPartyClient\Authtake.ThirdPartyClient.csproj", "{C7BD306D-335F-437A-B4F0-F66A919D757D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +28,14 @@ Global
 		{13434EA4-7467-46E5-956A-4985A38FC515}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{13434EA4-7467-46E5-956A-4985A38FC515}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{13434EA4-7467-46E5-956A-4985A38FC515}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7BD306D-335F-437A-B4F0-F66A919D757D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7BD306D-335F-437A-B4F0-F66A919D757D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7BD306D-335F-437A-B4F0-F66A919D757D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7BD306D-335F-437A-B4F0-F66A919D757D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{E9BDFCBE-6623-4F44-90F9-03A1AC9B09B6} = {F5A7F870-F2E1-4D13-8223-B2E205285C4C}
 		{13434EA4-7467-46E5-956A-4985A38FC515} = {F5A7F870-F2E1-4D13-8223-B2E205285C4C}
+		{C7BD306D-335F-437A-B4F0-F66A919D757D} = {F5A7F870-F2E1-4D13-8223-B2E205285C4C}
 	EndGlobalSection
 EndGlobal

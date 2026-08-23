@@ -10,7 +10,7 @@ icinde degil, Keycloak IDP uzerinde yapilir.
 | 1 | Keycloak IDP + PostgreSQL | Docker Compose | ✅ PART 1 |
 | 2 | Backend API (Resource Server) | .NET 8 Web API | ✅ PART 2 |
 | 3 | Frontend (Web App) | ASP.NET Blazor (statik SSR) | ✅ PART 3 |
-| 4 | 3rd Party API (Service Account) | .NET Console | ⏳ PART 4 |
+| 4 | 3rd Party API (Service Account) | .NET 8 Console | ✅ PART 4 |
 
 ---
 
@@ -230,6 +230,94 @@ sayfalari ister. Iki kullaniciyla da tum akisi ve cikisi test eder.
 > cookie'yi reddeder ve Secure cookie'yi HTTP'de gondermez &mdash; tarayicilar
 > `localhost` icin bu istisnalari tanir. Bunlar test istemcisinin sinirlari,
 > uygulamanin degil.
+
+---
+
+## PART 4 — 3rd Party API / Service-to-Service (tamamlandi)
+
+Kullanici etkilesimi olmadan calisan bir istemci. Tarayici, giris ekrani veya
+sifre giren bir insan yoktur: uygulama kendi kimligiyle (`client_id` +
+`client_secret`) Keycloak'tan token alir ve Backend API'ye o token'la gider.
+Gercek hayattaki karsiligi, baska bir sirketin sisteminin bizim API'mize
+baglanmasi ya da gece calisan bir entegrasyon isidir.
+
+### Dosyalar
+
+```
+src/Authtake.ThirdPartyClient/
+  Services/KeycloakTokenService.cs   Client Credentials akisi + token onbellegi
+  Services/BackendApiClient.cs       Bearer token ile Backend cagrisi
+  Models/TokenModels.cs              TokenResponse / TokenClaims / ApiCallResult
+  Reporting/ConsoleReport.cs         Konsol ciktisi ve kontrol sayaci
+  Program.cs                         5 adimlik senaryo
+  appsettings.json                   Keycloak + Backend yapilandirmasi
+scripts/verify-part4.ps1             18 test
+```
+
+### Calistirma
+
+Keycloak ve Backend API ayakta olmali:
+
+```powershell
+docker compose up -d
+dotnet run --project src/Authtake.BackendApi --launch-profile http
+dotnet run --project src/Authtake.ThirdPartyClient
+```
+
+### Uygulamanin yaptiklari
+
+| Adim | Ne yapar |
+|------|----------|
+| 1 | Keycloak'tan `grant_type=client_credentials` ile token alir, icindeki `azp` / `aud` / roller / gecerlilik suresini gosterir |
+| 2 | Uc Backend endpoint'ini token ile cagirir, donen durum kodlarini yazar |
+| 3 | Admin yanitini ayristirir: `isServiceAccount`, `accessedVia` alanlarini dogrular |
+| 4 | Negatif kontrol: token gondermeden ayni adrese gider, 401 bekler |
+| 5 | Token onbellegini gosterir: ikinci istek Keycloak'a gitmez |
+
+Uygulama kendi kontrollerini sayar ve **cikis kodu** dondurur (0 = hepsi gecti),
+boylece otomatik testlerden veya bir CI adimindan calistirilabilir.
+
+### Frontend ile farki
+
+| | Frontend (PART 3) | 3rd Party (PART 4) |
+|---|---|---|
+| Akis | Authorization Code + PKCE | Client Credentials |
+| Kullanici | Var, sifresini Keycloak'a girer | **Yok** |
+| Kimlik | Gercek kisi (`sefo_admin`) | Service account (`service-account-authtake-3rdparty`) |
+| Client tipi | Public (secret saklayamaz) | Confidential (`client_secret` sunucuda) |
+| Refresh token | Var | Yok — token dolunca ayni sekilde yenisi istenir |
+| Backend'in gordugu | `accessedVia: authorization_code` | `accessedVia: client_credentials` |
+
+Dikkat: Backend API tarafinda **hicbir degisiklik yapilmadi**. Ayni endpoint,
+ayni rol kontrolu, ayni `Authorization: Bearer` basligi. Backend'i istegin bir
+insandan mi yoksa bir servisten mi geldigi ilgilendirmiyor — yalnizca token'in
+gecerli olup olmadigi ve icindeki roller. Merkezi kimlik dogrulamanin en somut
+faydasi bu.
+
+### Dogrulama
+
+```powershell
+.\scripts\verify-part4.ps1
+```
+
+Script uygulamayi calistirip cikis kodunu ve ciktisini kontrol eder, ardindan
+iki bagimsiz test yapar: **yanlis `client_secret`** ile uygulamanin temiz bir
+hatayla durdugunu (ortam degiskeni ile ezerek), ve uygulamadan bagimsiz olarak
+akisin kendisinin de calistigini.
+
+### Tasarim Notlari
+
+- **Token onbellegi**: Her istek icin yeni token almak gereksiz. Token, suresi
+  dolmadan 30 saniye oncesine kadar yeniden kullanilir; bu pay, istek yoldayken
+  token'in gecersizlesmesini onler.
+- **`ContentRootPath = AppContext.BaseDirectory`**: `Host.CreateApplicationBuilder`
+  yapilandirmayi varsayilan olarak **calisma dizininde** arar. `dotnet run
+  --project ...` cozum kokunden calistirildiginda `appsettings.json` bulunamaz;
+  icerik koku uygulamanin kendi klasorune sabitlendi.
+- **`aud` claim'i tek metin de olabilir, dizi de**: JWT standardi ikisine de izin
+  verir, ayristirici iki durumu da karsilar.
+- **Cikis kodu**: Uygulama basarisiz kontrol varsa 1 doner. Bir demo programini
+  test edilebilir hale getiren en ucuz yontem.
 
 ---
 
