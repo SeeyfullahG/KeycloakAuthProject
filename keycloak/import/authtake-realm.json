@@ -54,20 +54,14 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "redirectUris": [
-        "http://localhost:3000/*",
-        "http://localhost:5001/*",
-        "https://localhost:5001/*",
-        "http://localhost:5002/*"
+        "http://localhost:5002/signin-oidc"
       ],
       "webOrigins": [
-        "http://localhost:3000",
-        "http://localhost:5001",
-        "https://localhost:5001",
         "http://localhost:5002"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:5001/*##https://localhost:5001/*##http://localhost:5002/*"
+        "post.logout.redirect.uris": "http://localhost:5002/signout-callback-oidc"
       },
       "defaultClientScopes": [
         "web-origins",

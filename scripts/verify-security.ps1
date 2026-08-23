@@ -58,11 +58,22 @@ try {
 Write-Host "`n=== 1) Token sahteciligi ===" -ForegroundColor Cyan
 
 # 1a) Imzayi boz
+#
+# Karakteri ORTADAN degistiriyoruz, sondan degil. RSA imzasi 256 bayttir ve
+# base64url gosteriminde SON karakter yalnizca 2 anlamli bit tasir; kalan 4 bit
+# dolgudur ve cozucu tarafindan yok sayilir. Son karakteri degistirmek bu yuzden
+# cogu zaman AYNI bayt dizisini uretir - imza aslinda hic bozulmamis olur ve
+# token hakli olarak kabul edilir. Ortadaki bir karakter ise her zaman gercek
+# baytlari degistirir.
 $parts = $service.Split('.')
-$flipped = if ($parts[2][-1] -ne 'A') { 'A' } else { 'B' }
-$badSignature = "$($parts[0]).$($parts[1]).$($parts[2].Substring(0, $parts[2].Length - 1))$flipped"
-if ((Get-ApiStatus $badSignature) -eq 401) { Ok "Imzasi bozulmus token reddedildi" }
-else { Bad "Imzasi bozulmus token KABUL EDILDI" }
+$mid = [int]($parts[2].Length / 2)
+$flipped = if ($parts[2][$mid] -ne 'A') { 'A' } else { 'B' }
+$badSignature = "$($parts[0]).$($parts[1])." +
+    $parts[2].Substring(0, $mid) + $flipped + $parts[2].Substring($mid + 1)
+
+$status = Get-ApiStatus $badSignature
+if ($status -eq 401) { Ok "Imzasi bozulmus token reddedildi" }
+else { Bad "Imzasi bozulmus token reddedilmedi (donen kod: $status)" }
 
 # 1b) Rolleri sisir - "token'in icine admin yazarim olur biter" saldirisi
 $escalated = New-TamperedToken $service {

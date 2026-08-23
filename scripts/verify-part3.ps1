@@ -136,6 +136,38 @@ try {
     if ($p.Uri -like "$KC/*") { Ok "Cikis sonrasi /profile yeniden giris istiyor" } else { Bad "/profile hala erisilebilir!" }
 } catch { Bad "Logout akisi basarisiz: $($_.Exception.Message)" }
 
+Write-Host "`n=== 6) Acik yonlendirme (open redirect) korumasi ===" -ForegroundColor Cyan
+# Giris sonrasi donus adresi kullanicidan geliyor. Yalnizca bu uygulamanin
+# icindeki bir yola donuse izin verilmeli. Aksi halde saldirgan, kurbani gercek
+# giris sayfasindan gecirip kendi sitesine dusurebilir ve orada sahte bir
+# "tekrar giris yapin" ekraniyla sifre toplayabilir.
+#
+# Dikkat: '//kotusite.example' RFC 3986'ya gore GECERLI bir goreli adrestir,
+# ama tarayici onu baska bir siteye giden adres olarak yorumlar.
+function Test-ReturnUrl($label, $returnUrl, [switch]$ShouldStayLocal) {
+    $jar = New-Jar
+    $login = Send-Request "$FE/authentication/login?returnUrl=$([Uri]::EscapeDataString($returnUrl))" $jar
+    if ($login.Content -notmatch 'action="([^"]+)"') { Bad "$label - giris formu gelmedi"; return }
+    $action = [System.Net.WebUtility]::HtmlDecode($matches[1])
+
+    $callback = Send-Request $action $jar 'POST' 'username=sefo_admin&password=Admin123!&credentialId=' -StopAtRedirect
+    if (-not $callback.Location) { Bad "$label - callback yonlendirmesi gelmedi"; return }
+
+    # Callback'i isle ama sonraki yonlendirmeyi takip etme: uygulamanin bizi
+    # nereye gondermek istedigini gormek istiyoruz.
+    $final = Send-Request $callback.Location $jar -StopAtRedirect
+    $target = if ($final.Location) { $final.Location } else { $final.Uri }
+
+    if ($target -like "$FE/*") { Ok "$label -> site icinde kaldi ($target)" }
+    else { Bad "$label -> DISARI YONLENDIRDI: $target" }
+}
+
+Test-ReturnUrl 'normal donus (/profile)'    '/profile'
+Test-ReturnUrl 'mutlak adres'               'https://kotusite.example/calindi'
+Test-ReturnUrl 'protokol-goreli (//)'       '//kotusite.example/calindi'
+Test-ReturnUrl 'ters bolu (/\)'             '/\kotusite.example'
+Test-ReturnUrl 'cift ters bolu'             '\kotusite.example'
+
 Write-Host ("`n{0} basarili, {1} basarisiz.`n" -f $script:Pass, $script:Fail) `
     -ForegroundColor $(if ($script:Fail) { 'Red' } else { 'Green' })
 if ($script:Fail) { exit 1 }

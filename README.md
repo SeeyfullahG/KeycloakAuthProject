@@ -450,6 +450,59 @@ bedeli her cagrida ek bir ag turudur. Kisa omur bu riski sinirlar.
 
 Davranis sessizce degisirse fark edelim diye bu da teste baglandi.
 
+### Bulunan ve kapatilan acik: acik yonlendirme (open redirect)
+
+Giris endpoint'i, giris sonrasi donulecek adresi kullanicidan aliyordu
+(`/authentication/login?returnUrl=...`). Kontrol yalnizca "goreli adres mi"
+diye bakiyordu:
+
+```csharp
+Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)   // yetersiz
+```
+
+`//kotusite.example` RFC 3986'ya gore **gecerli bir goreli adrestir**
+(network-path reference), ama tarayici onu `http://kotusite.example` olarak
+yorumlar. Test edildi ve dogrulandi: kullanici gercek Keycloak sayfasinda giris
+yaptiktan sonra baska bir siteye dusuruluyordu.
+
+Sömürü senaryosu: saldirgan kurbanina `.../authentication/login?returnUrl=//saldirgan.example`
+linkini gonderir. Kurban **gercek** giris ekranini gorur, dogru sifresini girer,
+ve saldirganin sayfasinda son bulur; orada "oturumunuz dustu, tekrar girin"
+diyen sahte bir ekran sifre toplayabilir. Acik yonlendirmenin klasik kullanimi
+budur: kimlik avini gercek akisin guvenilirligiyle guclendirmek.
+
+Cozum, ASP.NET Core'un kendi `Url.IsLocalUrl` mantigi: adres tek bir `/` ile
+baslamali ve ardindan `/` veya `\` gelmemeli. `verify-part3.ps1` bes varyanti
+(mutlak adres, `//`, `/\`, `\\`, bosluklu) kalici olarak test eder.
+
+### Redirect URI'lar daraltildi
+
+`authtake-frontend` icin kayitli adresler joker karakterliydi
+(`http://localhost:5002/*`) ve kullanilmayan girdiler iceriyordu (React icin
+`:3000`, `:5001`). Joker redirect URI, ayni origin'de bir acik yonlendirme
+bulunmasi halinde yetki kodunun calinmasina zemin hazirlar &mdash; yukaridaki
+acik tam da bu origin'deydi.
+
+| | Once | Sonra |
+|---|---|---|
+| redirectUris | 4 adet, joker karakterli | `http://localhost:5002/signin-oidc` |
+| webOrigins | 4 adet | `http://localhost:5002` |
+| post logout | 4 adet, joker karakterli | `http://localhost:5002/signout-callback-oidc` |
+
+Daraltirken bir hata yapildi ve testler yakaladi: post-logout adresi olarak
+`http://localhost:5002/` kaydedilmisti, oysa OIDC handler cikista
+**`SignedOutCallbackPath`** degerini gonderiyor. Keycloak adresi tanimayinca
+400 donuyor, Keycloak oturumu kapanmiyor ve kullanici bir sonraki istekte
+sessizce yeniden iceri aliniyordu. Dogru adres kaydedildi.
+
+### Bilinen, kapatilmayan: cikis GET ile yapiliyor
+
+`/authentication/logout` bir GET endpoint'idir; saldirganin sayfasindaki bir
+`<img src="...">` etiketi kullaniciyi oturumdan dusurebilir (CSRF). Etkisi
+yalnizca rahatsizlik verir &mdash; veri sizmaz, kullanici tekrar giris yapabilir.
+OIDC'nin RP-initiated logout akisi da zaten tarayici yonlendirmesi uzerine
+kuruludur. Uretimde POST + antiforgery token tercih edilmelidir.
+
 ### Bilinerek yapilan demo tercihi: profil sayfasi ham token'i gosteriyor
 
 `/profile` sayfasi access token'in kendisini ve cozulmus govdesini ekrana basar.

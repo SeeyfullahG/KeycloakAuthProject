@@ -73,7 +73,26 @@ app.Run();
 // Acik yonlendirme (open redirect) acigini kapatmak icin sadece uygulama ici
 // goreli yollara donusa izin veriyoruz.
 static string SafeReturnUrl(string? returnUrl) =>
-    !string.IsNullOrWhiteSpace(returnUrl)
-    && Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)
-        ? returnUrl
-        : "/";
+    IsLocalUrl(returnUrl) ? returnUrl! : "/";
+
+/// <summary>
+/// Yalnizca bu uygulamanin icindeki bir yola donuse izin verir.
+///
+/// Neden basit bir "goreli mi?" kontrolu yetmiyor: <c>//kotusite.com</c> RFC
+/// 3986'ya gore GECERLI bir goreli adrestir (network-path reference), ama
+/// tarayici onu <c>http://kotusite.com</c> olarak yorumlar. Yalnizca
+/// Uri.IsWellFormedUriString(UriKind.Relative) kullanan bir kontrol bunu
+/// kacirir ve acik yonlendirme (open redirect) acigi birakir: saldirgan
+/// kurbani gercek giris sayfasindan gecirip kendi sitesine dusurebilir,
+/// orada da sahte bir "tekrar giris yapin" ekraniyla sifre toplayabilir.
+///
+/// Bu yuzden ASP.NET Core'un kendi Url.IsLocalUrl mantigini uyguluyoruz:
+/// adres tek bir '/' ile baslamali, ardindan '/' veya '\' gelmemeli.
+/// </summary>
+static bool IsLocalUrl(string? url)
+{
+    if (string.IsNullOrWhiteSpace(url)) return false;
+    if (url[0] != '/') return false;          // mutlak adres veya sema
+    if (url.Length == 1) return true;         // sadece "/"
+    return url[1] != '/' && url[1] != '\\';   // "//" ve "/\" disari cikar
+}
