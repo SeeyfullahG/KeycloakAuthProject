@@ -1,14 +1,16 @@
-# PART 1 dogrulama scripti
+# PART 1 dogrulama scripti - Keycloak realm yapilandirmasi
 # Kullanim: .\scripts\verify-part1.ps1
 
 $ErrorActionPreference = 'Stop'
-$KC     = 'http://localhost:8080'
-$REALM  = 'authtake'
-$TP_ID  = 'authtake-3rdparty'
-$TP_SEC = 'thirdparty-secret-change-me-2024'
+. "$PSScriptRoot\lib\AuthFlow.ps1"
 
-function Ok($m)   { Write-Host "  [OK]   $m" -ForegroundColor Green }
-function Fail($m) { Write-Host "  [FAIL] $m" -ForegroundColor Red }
+$KC    = 'http://localhost:8080'
+$REALM = 'authtake'
+
+$script:Pass = 0
+$script:Fail = 0
+function Ok($m)   { Write-Host "  [OK]   $m" -ForegroundColor Green; $script:Pass++ }
+function Fail($m) { Write-Host "  [FAIL] $m" -ForegroundColor Red;   $script:Fail++ }
 
 Write-Host "`n=== 1) Keycloak ayakta mi? ===" -ForegroundColor Cyan
 try {
@@ -21,27 +23,20 @@ try {
 
 Write-Host "`n=== 2) Client Credentials Flow (3rd Party) ===" -ForegroundColor Cyan
 try {
-    $resp = Invoke-RestMethod -Method Post `
-        -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
-        -ContentType 'application/x-www-form-urlencoded' `
-        -Body @{
-            grant_type    = 'client_credentials'
-            client_id     = $TP_ID
-            client_secret = $TP_SEC
-        }
+    $resp = Get-ServiceToken
     Ok "Access token alindi (expires_in=$($resp.expires_in)s)"
 
-    # JWT payload decode
-    $payload = $resp.access_token.Split('.')[1].Replace('-', '+').Replace('_', '/')
-    while ($payload.Length % 4) { $payload += '=' }
-    $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload)) | ConvertFrom-Json
-
+    $claims = ConvertFrom-Jwt $resp.access_token
     Write-Host "    azp   : $($claims.azp)"
     Write-Host "    aud   : $($claims.aud -join ', ')"
     Write-Host "    roles : $($claims.realm_access.roles -join ', ')"
 
-    if ($claims.realm_access.roles -contains 'admin') { Ok "Service account 'admin' rolune sahip" }
-    else { Fail "Service account'ta 'admin' rolu yok" }
+    # Servis hesabi 'admin' DEGIL, kendi dar rolunu tasir (en az yetki ilkesi).
+    if ($claims.realm_access.roles -contains 'service-api') { Ok "Service account 'service-api' rolune sahip" }
+    else { Fail "Service account'ta 'service-api' rolu yok" }
+
+    if ($claims.realm_access.roles -notcontains 'admin') { Ok "Service account 'admin' rolunu TASIMIYOR (en az yetki)" }
+    else { Fail "Service account gereksiz yere 'admin' rolune sahip" }
 
     if ($claims.aud -contains 'authtake-backend') { Ok "Audience 'authtake-backend' iceriyor" }
     else { Fail "Audience mapper calismiyor (aud: $($claims.aud -join ', '))" }
@@ -49,26 +44,22 @@ try {
     Fail "Token alinamadi: $($_.Exception.Message)"
 }
 
-Write-Host "`n=== 3) Password Flow (test userlari) ===" -ForegroundColor Cyan
+Write-Host "`n=== 3) Authorization Code + PKCE (test userlari) ===" -ForegroundColor Cyan
+Write-Host "    Password akisi kapali; testler de gercek tarayici akisini kullaniyor." -ForegroundColor DarkGray
 foreach ($u in @(
-    @{ n='sefo_admin'; p='Admin123!'; r='admin' },
-    @{ n='sefo_user';  p='User123!';  r='user'  })) {
+    @{ n = 'sefo_admin'; p = 'Admin123!'; r = 'admin' },
+    @{ n = 'sefo_user';  p = 'User123!';  r = 'user'  })) {
     try {
-        $t = Invoke-RestMethod -Method Post `
-            -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
-            -ContentType 'application/x-www-form-urlencoded' `
-            -Body @{
-                grant_type = 'password'
-                client_id  = 'authtake-frontend'
-                username   = $u.n
-                password   = $u.p
-                scope      = 'openid profile email'
-            }
-        $pl = $t.access_token.Split('.')[1].Replace('-', '+').Replace('_', '/')
-        while ($pl.Length % 4) { $pl += '=' }
-        $c = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pl)) | ConvertFrom-Json
+        $t = Get-UserToken -Username $u.n -Password $u.p
+        $c = ConvertFrom-Jwt $t.access_token
+
         Ok "$($u.n) login OK - roles: $($c.realm_access.roles -join ', ')"
-        if ($c.realm_access.roles -notcontains $u.r) { Fail "$($u.n) '$($u.r)' rolune sahip degil" }
+        if ($c.realm_access.roles -contains $u.r) { Ok "$($u.n) '$($u.r)' rolune sahip" }
+        else { Fail "$($u.n) '$($u.r)' rolune sahip degil" }
+
+        if ($t.refresh_token) { Ok "$($u.n) icin refresh token verildi" }
+        else { Fail "$($u.n) icin refresh token gelmedi" }
+
         if ($u.n -eq 'sefo_user' -and $c.realm_access.roles -contains 'admin') {
             Fail "sefo_user admin rolune sahip olmamaliydi"
         }
@@ -77,4 +68,19 @@ foreach ($u in @(
     }
 }
 
-Write-Host "`nPART 1 dogrulamasi tamamlandi.`n" -ForegroundColor Cyan
+Write-Host "`n=== 4) Kapatilan akislar gercekten kapali mi? ===" -ForegroundColor Cyan
+# Public client'ta password akisi acik kalirsa PKCE'nin sagladigi koruma
+# atlanabilir; kapali oldugunu dogruluyoruz.
+try {
+    Invoke-RestMethod -Method Post -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
+        -ContentType 'application/x-www-form-urlencoded' `
+        -Body @{ grant_type = 'password'; client_id = 'authtake-frontend'
+                 username = 'sefo_admin'; password = 'Admin123!' } | Out-Null
+    Fail "Password akisi hala ACIK - public client'ta kapali olmaliydi"
+} catch {
+    Ok "Password (Direct Access Grants) akisi kapali"
+}
+
+Write-Host ("`n{0} basarili, {1} basarisiz.`n" -f $script:Pass, $script:Fail) `
+    -ForegroundColor $(if ($script:Fail) { 'Red' } else { 'Green' })
+if ($script:Fail) { exit 1 }

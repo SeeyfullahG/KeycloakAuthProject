@@ -8,7 +8,6 @@
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
-
   "accessTokenLifespan": 900,
   "accessTokenLifespanForImplicitFlow": 900,
   "ssoSessionIdleTimeout": 604800,
@@ -17,8 +16,7 @@
   "clientSessionIdleTimeout": 604800,
   "clientSessionMaxLifespan": 604800,
   "accessCodeLifespan": 60,
-  "revokeRefreshToken": false,
-
+  "revokeRefreshToken": true,
   "roles": {
     "realm": [
       {
@@ -32,10 +30,15 @@
         "description": "Standard user role - access to /api/hello/secure",
         "composite": false,
         "clientRole": false
+      },
+      {
+        "name": "service-api",
+        "description": "Machine-to-machine API access. Granted to service accounts only, never to humans.",
+        "composite": false,
+        "clientRole": false
       }
     ]
   },
-
   "clients": [
     {
       "clientId": "authtake-frontend",
@@ -47,7 +50,7 @@
       "bearerOnly": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
+      "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "redirectUris": [
@@ -74,7 +77,11 @@
         "basic",
         "email"
       ],
-      "optionalClientScopes": ["address", "phone", "offline_access"],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access"
+      ],
       "protocolMappers": [
         {
           "name": "audience-authtake-backend",
@@ -120,7 +127,12 @@
       "serviceAccountsEnabled": true,
       "redirectUris": [],
       "webOrigins": [],
-      "defaultClientScopes": ["roles", "basic", "profile", "email"],
+      "defaultClientScopes": [
+        "roles",
+        "basic",
+        "profile",
+        "email"
+      ],
       "protocolMappers": [
         {
           "name": "audience-authtake-backend",
@@ -136,7 +148,6 @@
       ]
     }
   ],
-
   "users": [
     {
       "username": "sefo_admin",
@@ -152,7 +163,11 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user", "offline_access"]
+      "realmRoles": [
+        "admin",
+        "user",
+        "offline_access"
+      ]
     },
     {
       "username": "sefo_user",
@@ -168,13 +183,27 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["user", "offline_access"]
+      "realmRoles": [
+        "user",
+        "offline_access"
+      ]
     },
     {
       "username": "service-account-authtake-3rdparty",
       "enabled": true,
       "serviceAccountClientId": "authtake-3rdparty",
-      "realmRoles": ["admin", "user"]
+      "realmRoles": [
+        "service-api"
+      ]
     }
-  ]
+  ],
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "refreshTokenMaxReuse": 0
 }

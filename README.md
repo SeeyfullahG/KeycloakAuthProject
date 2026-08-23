@@ -22,7 +22,7 @@ icinde degil, Keycloak IDP uzerinde yapilir.
 docker-compose.yml                     Keycloak 26 + PostgreSQL 15, kalici volume
 .env                                   Kimlik bilgileri / portlar
 keycloak/import/authtake-realm.json    Realm, 3 client, 2 rol, 2 user (otomatik import)
-scripts/verify-part1.ps1               Dogrulama scripti
+scripts/verify-part1.ps1               12 realm/rol/akis testi
 ```
 
 ### Onkosul (kuruldu ✅)
@@ -75,7 +75,7 @@ src/Authtake.BackendApi/
   Extensions/ClaimsPrincipalExtensions.cs    Claim -> UserInfo cikarimi
   Controllers/{Public,Hello,Admin}Controller.cs
   appsettings.json                           Keycloak authority/realm/audience + CORS
-scripts/verify-part2.ps1                     27 endpoint + RBAC testi
+scripts/verify-part2.ps1                     29 endpoint + RBAC testi
 ```
 
 ### Calistirma
@@ -251,7 +251,7 @@ src/Authtake.ThirdPartyClient/
   Reporting/ConsoleReport.cs         Konsol ciktisi ve kontrol sayaci
   Program.cs                         5 adimlik senaryo
   appsettings.json                   Keycloak + Backend yapilandirmasi
-scripts/verify-part4.ps1             18 test
+scripts/verify-part4.ps1             19 test
 ```
 
 ### Calistirma
@@ -321,6 +321,66 @@ akisin kendisinin de calistigini.
 
 ---
 
+## Guvenlik
+
+### Dogrulanmis korumalar
+
+`scripts/verify-security.ps1` (19 test) su saldiri senaryolarini calistirir ve
+hepsinin reddedildigini dogrular:
+
+| Senaryo | Beklenen |
+|---------|----------|
+| Imzasi bozulmus token | 401 |
+| Rolleri degistirilmis token (`admin`, `superuser`, `root` eklenmis) | 401 |
+| `alg=none` &mdash; "imza kontrolu yapma" saldirisi | 401 |
+| Baska realm'den alinmis, kendi icinde gecerli token | 401 |
+| `id_token`'i access token yerine kullanmak | 401 |
+| Rolu yetersiz kullanici | 403 (401 degil) |
+| Public client'ta password akisi | reddedilir |
+| Public client'ta client_credentials | reddedilir |
+| Eski refresh token'i ikinci kez kullanmak | reddedilir (rotasyon) |
+| Ard arda yanlis sifre | hesap gecici kilitlenir |
+
+Test, kilitledigi hesabi sonunda admin API ile tekrar acar; aksi halde diger
+script'ler 15 dakika calisamazdi.
+
+### Sertlestirme kararlari
+
+| Karar | Gerekce |
+|-------|---------|
+| Public client'ta **password (Direct Access Grants) akisi kapali** | Acik kalirsa PKCE'nin sagladigi korumayi atlayan bir yan kapi olusur. Testler de artik gercek Authorization Code + PKCE akisini kullanir (`scripts/lib/AuthFlow.ps1`) |
+| **Brute force korumasi acik** | `failureFactor=5`, kademeli bekleme, en fazla 15 dk kilit. Password akisiyla birlikte kapali olmasi ciddi bir riskti |
+| **Refresh token rotasyonu** (`revokeRefreshToken=true`) | Her yenilemede eski token gecersizlesir; calinan bir refresh token'in omru tek kullanimla sinirlanir |
+| Servis hesabina **`admin` yerine `service-api` rolu** | En az yetki ilkesi: `admin` rolune ileride eklenecek yetkiler 3rd party servise otomatik olarak gecmez. Insan ve makine yetkileri ayri kalir |
+| PostgreSQL portu **disariya acilmadi** | Veritabanina yalnizca Keycloak konteyneri erisir |
+
+### Bilinen davranis: cikis, access token'i iptal etmez
+
+Cikis yapildiginda refresh token gercekten iptal edilir, ancak elde bulunan
+access token **suresi dolana kadar (en fazla 15 dk) gecerli kalmaya devam eder.**
+
+Bu bir acik degil, JWT'nin dogasidir: Backend her istekte Keycloak'a "bu token
+hala gecerli mi" diye sormaz, imzaya ve `exp` alanina bakar. Aninda iptal
+gerekiyorsa token introspection (her istekte IDP'ye sorma) gerekir &mdash; bunun
+bedeli her cagrida ek bir ag turudur. Kisa omur bu riski sinirlar.
+
+Davranis sessizce degisirse fark edelim diye bu da teste baglandi.
+
+### Uretime alirken yapilmasi gerekenler
+
+Asagidakiler **bilerek** gelistirme ayarinda birakildi. Yerel calistirmayi
+kolaylastirirlar; uretimde kabul edilemezler.
+
+| # | Konu | Su anki durum | Uretimde |
+|---|------|---------------|----------|
+| 1 | **TLS** | Her sey HTTP: `sslRequired: none`, `RequireHttpsMetadata: false`, cookie'ler `SameAsRequest` | HTTPS zorunlu; `sslRequired: external`, cookie'ler `Always`, OIDC varsayilanlarina (form_post + SameSite=None) donulur |
+| 2 | **Gizli bilgiler** | Client secret'lar, `admin`/`admin` ve test sifreleri repoda acikta | Secret yoneticisi (Vault, Key Vault, Docker secrets); realm import'tan cikarilir |
+| 3 | **Keycloak modu** | `start-dev`, bellek ici cache, admin konsolu varsayilan sifreyle | `start` + uretim veritabani + guclu admin sifresi + admin konsoluna ag kisitlamasi |
+| 4 | **Rate limiting** | Backend API'de yok | Reverse proxy veya `AddRateLimiter` ile istek sinirlama |
+| 5 | **Token omru** | Access 15 dk, SSO oturumu 7 gun | Ihtiyaca gore kisaltilir; 7 gun cogu senaryo icin uzun |
+
+---
+
 ## Realm Yapilandirmasi
 
 **Realm:** `authtake` — Access token 15 dk (900s), SSO session 7 gun (604800s)
@@ -329,7 +389,7 @@ akisin kendisinin de calistigini.
 
 | Client ID | Tip | Flow | Secret |
 |-----------|-----|------|--------|
-| `authtake-frontend` | Public | Authorization Code + PKCE (S256), Password (test) | — |
+| `authtake-frontend` | Public | Authorization Code + PKCE (S256) | — |
 | `authtake-backend` | Confidential | Yok — sadece JWT dogrular | `backend-secret-change-me-2024` |
 | `authtake-3rdparty` | Confidential | Client Credentials (service account) | `thirdparty-secret-change-me-2024` |
 
@@ -350,7 +410,7 @@ account) — bu, Keycloak 26'da "bearer-only" resource server'in karsiligidir.
 |-----------|-------|--------|
 | `sefo_admin` | `Admin123!` | `admin`, `user` |
 | `sefo_user` | `User123!` | `user` |
-| `service-account-authtake-3rdparty` | — (client secret) | `admin`, `user` |
+| `service-account-authtake-3rdparty` | — (client secret) | `service-api` |
 
 ---
 

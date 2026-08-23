@@ -12,9 +12,10 @@ namespace Authtake.BackendApi.Controllers;
 public sealed class AdminController(ILogger<AdminController> logger) : ControllerBase
 {
     /// <summary>
-    /// Yalnizca 'admin' realm rolu olan taraflar erisebilir. Buna hem interaktif
-    /// login yapan sefo_admin, hem de Client Credentials ile token alan
-    /// authtake-3rdparty service account'u dahildir.
+    /// Korumali veri. Iki rolden birine sahip olanlar erisebilir:
+    /// 'admin' (interaktif login yapan gercek kullanici, orn. sefo_admin) veya
+    /// 'service-api' (Client Credentials ile token alan servis hesabi).
+    /// Insan ve makine yetkileri bilerek ayri rollerde tutulur.
     /// </summary>
     [HttpGet("data")]
     [ProducesResponseType<ApiResponse>(StatusCodes.Status200OK)]
@@ -33,7 +34,7 @@ public sealed class AdminController(ILogger<AdminController> logger) : Controlle
             Data = new
             {
                 endpoint = "/api/admin/data",
-                requiredRole = "admin",
+                requiredRoles = new[] { "admin", "service-api" },
                 accessedVia = user.IsServiceAccount ? "client_credentials" : "authorization_code",
                 records = new[]
                 {

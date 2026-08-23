@@ -6,13 +6,9 @@
 # yonlendirilir, giris formunu doldurur, geri donen oturum cookie'siyle korumali
 # sayfalari ister.
 #
-# Neden Invoke-WebRequest degil de HttpWebRequest?
-# Windows PowerShell 5.1'in Invoke-WebRequest'i, yonlendirme (3xx) yanitlarinda
-# yazilan cookie'leri WebSession'a aktarmaz; yalnizca zincirin son yanitindakileri
-# alir. OIDC'nin correlation/nonce cookie'leri tam olarak 302 yanitinda yazildigi
-# icin bu bilgi kayboluyor ve donuste "Correlation failed" hatasi aliniyor.
-# HttpWebRequest'e verilen CookieContainer ise zincirdeki her yanitin
-# cookie'lerini biriktirir.
+# HTTP ve cookie yardimcilari ortak kutuphanede; oradaki aciklamalar bu
+# script'in neden Invoke-WebRequest yerine HttpWebRequest kullandigini anlatir.
+. "$PSScriptRoot\lib\AuthFlow.ps1"
 
 $FE = 'http://localhost:5002'
 $KC = 'http://localhost:8080'
@@ -21,112 +17,6 @@ $script:Pass = 0
 $script:Fail = 0
 function Ok($m)  { Write-Host "  [OK]   $m" -ForegroundColor Green; $script:Pass++ }
 function Bad($m) { Write-Host "  [FAIL] $m" -ForegroundColor Red;   $script:Fail++ }
-
-function New-Jar { New-Object System.Net.CookieContainer }
-
-# Keycloak kendi oturum cookie'lerini (AUTH_SESSION_ID, KC_RESTART, ...) her
-# zaman Secure isaretiyle yazar. Tarayicilar http://localhost'u "guvenilir
-# kaynak" saydigi icin bunlari sorunsuz geri gonderir; .NET'in cookie deposu ise
-# boyle bir istisna tanimaz ve Secure cookie'yi HTTP uzerinden hic gondermez.
-# Isareti test istemcisinde kaldiriyoruz - uygulamada bir sorun degil, yalnizca
-# bu script'in tarayici davranisini taklit edebilmesi icin gerekli.
-function Clear-SecureFlag($jar) {
-    foreach ($u in @("https://localhost:8080/realms/authtake/",
-                     "https://localhost:8080/",
-                     "https://localhost:5002/",
-                     "https://localhost:5002/signin-oidc")) {
-        foreach ($c in $jar.GetCookies([Uri]$u)) { $c.Secure = $false }
-    }
-}
-
-# Cookie'leri Set-Cookie basligindan elle toplayip depoya ekler.
-#
-# Neden gerekli: ASP.NET Core, OIDC correlation cookie'sini Path=/signin-oidc
-# ile yazar, ama bu cookie /authentication/login istegine cevaben gelir.
-# .NET'in CookieContainer'i, yolu istek yolunun altinda olmayan cookie'yi
-# sessizce reddeder (RFC 6265'ten daha kati bir davranis); tarayicilar ise
-# kabul eder. Bu yuzden basligi kendimiz ayristiriyoruz.
-function Add-ResponseCookies($jar, $resp) {
-    $raw = $resp.Headers['Set-Cookie']
-    if ([string]::IsNullOrEmpty($raw)) { return }
-
-    # Birden fazla Set-Cookie tek basligta virgulle birlesmis olabilir. Virgulu
-    # yalnizca ardindan "isim=" gelen yerde bolerek Expires icindeki
-    # "Fri, 14 Aug ..." virgulunu korumus oluyoruz.
-    foreach ($piece in [regex]::Split($raw, ',(?=[^;,]+=)')) {
-        $parts = $piece.Split(';')
-        $nv = $parts[0].Trim()
-        $eq = $nv.IndexOf('=')
-        if ($eq -lt 1) { continue }
-
-        $name = $nv.Substring(0, $eq).Trim()
-        $value = $nv.Substring($eq + 1).Trim()
-        $path = '/'
-        foreach ($attr in $parts | Select-Object -Skip 1) {
-            $a = $attr.Trim()
-            if ($a -like 'path=*') { $path = $a.Substring(5) }
-        }
-
-        $cookie = New-Object System.Net.Cookie($name, $value, $path, 'localhost')
-        try { $jar.Add($cookie) } catch { }
-    }
-}
-
-# Yonlendirmeleri elle takip ediyoruz ki her adimda cookie'leri toplayabilelim.
-function Send-Request($uri, $jar, $method = 'GET', $body = $null) {
-    $current = $uri
-    $verb = $method
-    $payload = $body
-
-    for ($hop = 0; $hop -lt 12; $hop++) {
-        Clear-SecureFlag $jar
-
-        $req = [System.Net.HttpWebRequest]::Create($current)
-        $req.CookieContainer = $jar
-        $req.AllowAutoRedirect = $false
-        $req.Method = $verb
-        $req.UserAgent = 'authtake-verify-part3'
-        $req.Timeout = 20000
-
-        if ($null -ne $payload) {
-            $req.ContentType = 'application/x-www-form-urlencoded'
-            $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
-            $req.ContentLength = $bytes.Length
-            $stream = $req.GetRequestStream()
-            $stream.Write($bytes, 0, $bytes.Length)
-            $stream.Close()
-        }
-
-        try { $resp = $req.GetResponse() }
-        catch [System.Net.WebException] {
-            $resp = $_.Exception.Response
-            if (-not $resp) { throw }
-        }
-
-        Add-ResponseCookies $jar $resp
-
-        $status = [int]$resp.StatusCode
-        $location = $resp.Headers['Location']
-
-        if ($status -in 301, 302, 303, 307, 308 -and $location) {
-            $resp.Close()
-            $current = (New-Object Uri([Uri]$current, $location)).AbsoluteUri
-            # 302/303 sonrasi istek GET'e doner (POST/Redirect/GET deseni).
-            $verb = 'GET'
-            $payload = $null
-            continue
-        }
-
-        $reader = New-Object IO.StreamReader($resp.GetResponseStream())
-        $content = $reader.ReadToEnd()
-        $reader.Close()
-        $resp.Close()
-
-        return @{ Status = $status; Content = $content; Uri = $current }
-    }
-
-    throw "Cok fazla yonlendirme: $uri"
-}
 
 # Keycloak giris formunu doldurup gonderir; olusan oturumu (cookie deposu) dondurur.
 function Invoke-KeycloakLogin($username, $password) {

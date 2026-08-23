@@ -86,8 +86,12 @@ try
         $"Token bu client icin uretildi ({keycloak.ClientId})");
     report.Check(claims.Audiences.Contains("authtake-backend"),
         "Audience 'authtake-backend' iceriyor - Backend bu token'i kabul edebilir");
-    report.Check(claims.Roles.Contains("admin"),
-        "Service account 'admin' rolune sahip");
+    // Servis hesabi insanlarin 'admin' rolunu tasimaz; kendi dar rolu vardir.
+    // Boylece 'admin' rolune ileride eklenecek yetkiler bu servise sizmaz.
+    report.Check(claims.Roles.Contains("service-api"),
+        "Service account 'service-api' rolune sahip");
+    report.Check(!claims.Roles.Contains("admin"),
+        "Service account 'admin' rolunu TASIMIYOR (en az yetki ilkesi)");
     report.Check(claims.PreferredUsername?.StartsWith("service-account-") is true,
         "Kimlik bir service account (insan kullanici degil)");
 }
@@ -108,7 +112,7 @@ foreach (var call in new[]
 {
     (Path: "/api/public/hello", Expected: 200, Note: "token gerektirmez"),
     (Path: "/api/hello/secure", Expected: 200, Note: "gecerli token yeterli"),
-    (Path: "/api/admin/data",   Expected: 200, Note: "admin rolu gerekli")
+    (Path: "/api/admin/data",   Expected: 200, Note: "admin veya service-api rolu gerekli")
 })
 {
     var result = await api.GetAsync(call.Path, accessToken);

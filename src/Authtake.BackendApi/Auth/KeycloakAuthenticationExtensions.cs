@@ -76,7 +76,16 @@ public static class KeycloakAuthenticationExtensions
 
         services.AddAuthorizationBuilder()
             .AddPolicy(AuthenticatedPolicy, p => p.RequireAuthenticatedUser())
-            .AddPolicy(AdminPolicy, p => p.RequireAuthenticatedUser().RequireRole("admin"));
+            // Korumali veriye iki taraf erisebilir: 'admin' rolu olan gercek
+            // kullanicilar ve 'service-api' rolu olan servis hesaplari.
+            //
+            // Servis hesabina 'admin' vermek yerine ayri bir rol tanimlamamizin
+            // sebebi en az yetki ilkesi: ileride 'admin' rolune yeni ve daha
+            // tehlikeli yetkiler eklendiginde 3rd party bunlari otomatik olarak
+            // kazanmaz. Insan yetkileriyle makine yetkileri ayri kalir.
+            .AddPolicy(AdminPolicy, p => p
+                .RequireAuthenticatedUser()
+                .RequireRole("admin", "service-api"));
 
         return services;
     }

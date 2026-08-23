@@ -2,6 +2,8 @@
 # Onkosul: docker compose up -d  VE  dotnet run --project src/Authtake.BackendApi
 # Kullanim: .\scripts\verify-part2.ps1
 
+. "$PSScriptRoot\lib\AuthFlow.ps1"
+
 $KC     = 'http://localhost:8080'
 $API    = 'http://localhost:5000'
 $REALM  = 'authtake'
@@ -10,20 +12,6 @@ $script:Pass = 0
 $script:Fail = 0
 function Ok($m)   { Write-Host "  [OK]   $m" -ForegroundColor Green; $script:Pass++ }
 function Bad($m)  { Write-Host "  [FAIL] $m" -ForegroundColor Red;   $script:Fail++ }
-
-function Get-UserToken($u, $p) {
-    (Invoke-RestMethod -Method Post -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
-        -ContentType 'application/x-www-form-urlencoded' `
-        -Body @{ grant_type='password'; client_id='authtake-frontend'
-                 username=$u; password=$p; scope='openid profile email' }).access_token
-}
-
-function Get-ServiceToken {
-    (Invoke-RestMethod -Method Post -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
-        -ContentType 'application/x-www-form-urlencoded' `
-        -Body @{ grant_type='client_credentials'; client_id='authtake-3rdparty'
-                 client_secret='thirdparty-secret-change-me-2024' }).access_token
-}
 
 # Beklenen HTTP status'u dogrular, yanit govdesini geri dondurur.
 # Not: Windows PowerShell 5.1'de -SkipHttpErrorCheck yok ve 4xx/5xx exception
@@ -54,9 +42,9 @@ function Test-Endpoint($label, $path, $token, $expected) {
 
 Write-Host "`n=== Token'lar aliniyor ===" -ForegroundColor Cyan
 try {
-    $adminTok = Get-UserToken 'sefo_admin' 'Admin123!'
-    $userTok  = Get-UserToken 'sefo_user'  'User123!'
-    $svcTok   = Get-ServiceToken
+    $adminTok = (Get-UserToken -Username 'sefo_admin' -Password 'Admin123!').access_token
+    $userTok  = (Get-UserToken -Username 'sefo_user'  -Password 'User123!').access_token
+    $svcTok   = (Get-ServiceToken).access_token
     Ok "sefo_admin / sefo_user / service-account token'lari alindi"
 } catch {
     Bad "Keycloak'tan token alinamadi: $($_.Exception.Message)"
@@ -84,7 +72,7 @@ if ($r) {
 }
 Test-Endpoint 'sefo_admin' '/api/hello/secure' $adminTok 200 | Out-Null
 
-Write-Host "`n=== 3) /api/admin/data - sadece admin rolu ===" -ForegroundColor Cyan
+Write-Host "`n=== 3) /api/admin/data - admin veya service-api rolu ===" -ForegroundColor Cyan
 $r = Test-Endpoint 'token YOK' '/api/admin/data' $null 401
 if ($r) {
     if ($r.error -eq 'Unauthorized' -and $r.status -eq 401 -and $r.timestamp) {
@@ -112,25 +100,25 @@ if ($r) {
     if ($r.user.isServiceAccount)                { Ok "isServiceAccount = true" } else { Bad "service account olarak taninmadi" }
     if ($r.user.clientId -eq 'authtake-3rdparty'){ Ok "clientId = $($r.user.clientId)" } else { Bad "clientId: $($r.user.clientId)" }
     if ($r.data.accessedVia -eq 'client_credentials') { Ok "accessedVia = client_credentials" } else { Bad "accessedVia: $($r.data.accessedVia)" }
+    if ($r.user.roles -contains 'service-api') { Ok "Servis 'service-api' roluyle erisiyor" } else { Bad "service-api rolu yok" }
+    if ($r.user.roles -notcontains 'admin')    { Ok "Servis 'admin' rolu OLMADAN erisiyor (en az yetki)" } else { Bad "Servis hala admin rolu tasiyor" }
 }
 
-Write-Host "`n=== 5) Audience dogrulamasi ===" -ForegroundColor Cyan
-# Sadece 'account' audience'i olan bir token uretip reddedildigini dogrula.
+Write-Host "`n=== 5) Yabanci token reddediliyor mu? ===" -ForegroundColor Cyan
+# Baska bir realm'den (master) alinmis, imzasi kendi icinde GECERLI bir token.
+# Backend'in yalnizca kendi realm'ine (issuer) ve kendi audience'ina guvendigini
+# dogrular. Daha genis sahtecilik testleri icin: scripts/verify-security.ps1
 try {
-    $wrong = (Invoke-RestMethod -Method Post -Uri "$KC/realms/$REALM/protocol/openid-connect/token" `
+    $foreign = (Invoke-RestMethod -Method Post `
+        -Uri "$KC/realms/master/protocol/openid-connect/token" `
         -ContentType 'application/x-www-form-urlencoded' `
-        -Body @{ grant_type='password'; client_id='authtake-frontend'
-                 username='sefo_admin'; password='Admin123!'
-                 scope='openid'; audience='account' }).access_token
-    $pl = $wrong.Split('.')[1].Replace('-','+').Replace('_','/'); while ($pl.Length % 4) { $pl += '=' }
-    $aud = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pl)) | ConvertFrom-Json).aud
-    Write-Host "    (uretilen token aud: $($aud -join ', '))"
-    if ($aud -contains 'authtake-backend') {
-        Ok "Bu realm her token'a authtake-backend audience'i ekliyor - negatif test atlandi"
-    } else {
-        Test-Endpoint 'yanlis audience' '/api/hello/secure' $wrong 401 | Out-Null
-    }
-} catch { Bad "audience testi calistirilamadi: $($_.Exception.Message)" }
+        -Body @{ grant_type = 'password'; client_id = 'admin-cli'
+                 username = 'admin'; password = 'admin' }).access_token
+
+    Test-Endpoint 'master realm token' '/api/hello/secure' $foreign 401 | Out-Null
+} catch {
+    Bad "Yabanci token testi calistirilamadi: $($_.Exception.Message)"
+}
 
 Write-Host ("`n{0} basarili, {1} basarisiz.`n" -f $script:Pass, $script:Fail) `
     -ForegroundColor $(if ($script:Fail) { 'Red' } else { 'Green' })
