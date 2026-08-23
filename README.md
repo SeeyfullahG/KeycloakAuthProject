@@ -60,8 +60,13 @@ Admin Console: http://localhost:8080 → `admin` / `admin`
 ```
 
 Script sunlari kontrol eder: realm discovery endpoint, 3rd party client
-credentials flow, token icindeki `aud` + `realm_access.roles`, ve iki test
-kullanicisinin login + rol atamalari.
+credentials flow, token icindeki `aud` + `realm_access.roles`, iki test
+kullanicisinin Authorization Code + PKCE ile girisi ve rol atamalari, ve
+password akisinin gercekten kapali oldugu.
+
+**Veri kalicligi dogrulandi:** `docker compose down` (volume silmeden) ve
+tekrar `up` sonrasinda realm, kullanicilar ve sertlestirme ayarlari
+korunuyor. Elle olusturulan bir iz kullanicisiyla test edildi.
 
 ---
 
@@ -444,6 +449,31 @@ gerekiyorsa token introspection (her istekte IDP'ye sorma) gerekir &mdash; bunun
 bedeli her cagrida ek bir ag turudur. Kisa omur bu riski sinirlar.
 
 Davranis sessizce degisirse fark edelim diye bu da teste baglandi.
+
+### Bilinerek yapilan demo tercihi: profil sayfasi ham token'i gosteriyor
+
+`/profile` sayfasi access token'in kendisini ve cozulmus govdesini ekrana basar.
+Bu, projenin ogretici amaci icin bilincli bir tercihtir &mdash; token'in ne
+oldugunu gormek konuyu anlamanin en hizli yolu.
+
+Gercek bir uygulamada yapilmamalidir: oturum cookie'si `HttpOnly` isaretlidir,
+yani JavaScript'in token'a erismesini engelleriz. Token'i HTML'e basmak bu
+korumayi anlamsiz kilar &mdash; sayfada bir XSS acigi olsa token dogrudan
+okunabilirdi. Uretimde bu kart kaldirilmalidir.
+
+### Beklenmeyen hatalar ve IDP erisilemezligi
+
+- **500 yanitlari** da 401/403 ile ayni hata zarfini kullanir
+  (`error` / `message` / `status` / `path` / `timestamp`). Ic detay
+  sizdirilmez; ayrinti yalnizca loglara yazilir.
+- **Keycloak erisilemezse** Backend API imza anahtarlarini alamaz ve korumali
+  endpoint'ler **401** doner &mdash; yani sistem acik kalmaz, kapanir
+  (fail-closed). Dogrulanmis davranistir.
+
+> Not: 500 zarfi kod icinde yerinde, ancak otomatik testlerde dogrulanmiyor.
+> Gercek bir 500 tetiklemek icin uygulamaya kalici bir "hata uret" endpoint'i
+> eklemek gerekirdi; bu, uretim koduna test amacli bir acik eklemek anlamina
+> geldigi icin tercih edilmedi.
 
 ### Uretime alirken yapilmasi gerekenler
 
