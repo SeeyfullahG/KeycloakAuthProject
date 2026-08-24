@@ -1,7 +1,81 @@
 # Keycloak IDP Authentication System — `authtake`
 
 Merkezi Authentication & Authorization altyapisi. Kimlik dogrulama uygulamalarin
-icinde degil, Keycloak IDP uzerinde yapilir.
+icinde degil, **Keycloak IDP** uzerinde yapilir. Uc uygulama (web arayuzu,
+korumali API, servis istemcisi) ayni kimlik altyapisina baglanir.
+
+---
+
+## Hizli Baslangic
+
+### Onkosullar
+
+| Arac | Indirme |
+|------|---------|
+| Docker Desktop | https://www.docker.com/products/docker-desktop/ |
+| .NET 8 SDK | https://dotnet.microsoft.com/download/dotnet/8.0 |
+
+### Calistirma
+
+```powershell
+git clone https://github.com/SeeyfullahG/KeycloakAuthProject.git
+cd KeycloakAuthProject
+.\start.ps1
+```
+
+`start.ps1` sirasiyla sunlari yapar: Docker Desktop kapaliysa acar, Keycloak +
+PostgreSQL konteynerlerini baslatir, realm'i otomatik yukler, projeleri derler,
+Backend ve Frontend'i ayri pencerelerde calistirir ve tarayiciyi acar.
+Ilk calistirmada Docker imajlari indirilecegi icin birkac dakika surebilir.
+
+### Adresler
+
+| Ne | Adres |
+|----|-------|
+| **Frontend** (buradan basla) | http://localhost:5002 |
+| Backend API / Swagger | http://localhost:5000/swagger |
+| Keycloak admin konsolu | http://localhost:8080 &nbsp; (`admin` / `admin`) |
+
+### Test kullanicilari
+
+| Kullanici | Sifre | Roller | Ne gorur |
+|-----------|-------|--------|----------|
+| `sefo_admin` | `Admin123!` | admin, user | Admin Paneli **gorunur** |
+| `sefo_user` | `User123!` | user | Admin Paneli **gizli**, `/admin` adresi 403 |
+
+Ikisiyle de girip farki gormek, projenin ozunu en hizli anlatan denemedir.
+**API Testi** sayfasindaki dort buton 200 / 401 / 403 farkini canli gosterir.
+
+### 3rd Party servis istemcisi (kullanici olmadan)
+
+```powershell
+dotnet run --project src\Authtake.ThirdPartyClient
+```
+
+Konsol uygulamasi kendi kimligiyle (client_id + client_secret) token alir ve
+korumali API'yi cagirir. Ortada tarayici, giris ekrani ya da sifre giren bir
+insan yoktur.
+
+### Testler
+
+```powershell
+.\test-all.ps1
+```
+
+133 otomatik dogrulama testi (6 suite). PART 5 testi token omrunu gecici olarak
+kisalttigi icin toplam ~2 dakika surer. Tek tek de calistirilabilir:
+`.\scripts\verify-part1.ps1` ... `.\scripts\verify-security.ps1`
+
+### Durdurma
+
+Backend ve Frontend pencerelerini kapat, ardindan:
+
+```powershell
+docker compose down        # veriler korunur
+docker compose down -v     # veritabanini da siler (realm dosyadan yeniden yuklenir)
+```
+
+---
 
 ## Bilesenler
 
@@ -100,7 +174,7 @@ endpoint'leri tarayicidan deneyebilirsin.)
 |----------|-------|-----|-----|-----|
 | `GET /api/public/hello` | Yok | herkes | — | — |
 | `GET /api/hello/secure` | Gecerli token | admin + user | token yok/gecersiz/suresi dolmus | — |
-| `GET /api/admin/data` | `admin` rolu | sefo_admin, 3rd party SA | token yok | sefo_user |
+| `GET /api/admin/data` | `admin` veya `service-api` rolu | sefo_admin, 3rd party servis | token yok | sefo_user |
 
 ### Yanit Formatlari
 
