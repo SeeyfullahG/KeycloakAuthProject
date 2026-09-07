@@ -59,12 +59,34 @@ app.MapGet("/authentication/login", (string? returnUrl) =>
         new AuthenticationProperties { RedirectUri = SafeReturnUrl(returnUrl) },
         [OpenIdConnectDefaults.AuthenticationScheme]));
 
-app.MapGet("/authentication/logout", () =>
+app.MapGet("/authentication/logout", async (HttpContext http) =>
+{
+    // RP-initiated logout, Keycloak'a kimin cikis yaptigini soyleyen id_token'i
+    // 'id_token_hint' parametresiyle gonderir. Keycloak 19+ bu parametreyi
+    // zorunlu tutar: 'post_logout_redirect_uri' varken id_token_hint yoksa istegi
+    // 400 "Missing parameters: id_token_hint" ile reddeder.
+    //
+    // Ortada oturum yoksa gonderecek bir id_token da yoktur. Bu, sanildigindan
+    // kolay olusan bir durumdur: kullanici cikis yaptiktan sonra geri tusuna
+    // basarsa, cikis adresini yer imine eklemisse, ya da oturumu dusmusken
+    // "Cikis Yap"a tiklarsa ayni adres yeniden cagrilir. Boyle bir durumda
+    // Keycloak'a gitmenin bir anlami yok - zaten orada da oturum kalmamistir.
+    // Token'lar oturum cookie'sinde saklaniyor; varsayilan sema uzerinden okunur.
+    var idToken = await http.GetTokenAsync("id_token");
+
+    if (string.IsNullOrEmpty(idToken))
+    {
+        // Geride kalmis bir yerel cookie olabilir; onu temizleyip ana sayfaya don.
+        await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Results.Redirect("/");
+    }
+
     // Hem yerel cookie'yi siler hem Keycloak oturumunu sonlandirir (single logout).
-    Results.SignOut(
+    return Results.SignOut(
         new AuthenticationProperties { RedirectUri = "/" },
         [CookieAuthenticationDefaults.AuthenticationScheme,
-         OpenIdConnectDefaults.AuthenticationScheme]));
+         OpenIdConnectDefaults.AuthenticationScheme]);
+});
 
 app.MapRazorComponents<App>();
 

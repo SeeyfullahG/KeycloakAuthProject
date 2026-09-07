@@ -134,6 +134,29 @@ try {
 
     $p = Send-Request "$FE/profile" $s
     if ($p.Uri -like "$KC/*") { Ok "Cikis sonrasi /profile yeniden giris istiyor" } else { Bad "/profile hala erisilebilir!" }
+
+    # Cikis adresi oturum YOKKEN cagrilirsa ne olur?
+    #
+    # RP-initiated logout, Keycloak'a kimin ciktigini soyleyen id_token'i
+    # 'id_token_hint' ile gonderir. Keycloak 19+ bunu zorunlu tutar ve eksikse
+    # istegi 400 "Missing parameters: id_token_hint" ile reddeder. Oturum yoksa
+    # gonderecek id_token da olmadigi icin, Keycloak'a hic gitmemeliyiz.
+    #
+    # Bu durum kolay olusur: cikistan sonra geri tusuna basmak, cikis adresini
+    # yer imine eklemek, ya da oturum dusmusken "Cikis Yap"a tiklamak.
+    $second = Send-Request "$FE/authentication/logout" $s -StopAtRedirect
+    if ($second.Location -like "$KC/*") {
+        Bad "Oturum yokken de Keycloak'a cikis istegi gonderiliyor (id_token_hint hatasi verir)"
+    } else {
+        Ok "Oturum yokken cikis, Keycloak'a gitmeden uygulama icinde kaliyor"
+    }
+
+    $fresh = Send-Request "$FE/authentication/logout" (New-Jar) -StopAtRedirect
+    if ($fresh.Location -like "$KC/*") {
+        Bad "Hic giris yapmamis ziyaretci icin de Keycloak'a gidiliyor"
+    } else {
+        Ok "Giris yapmamis ziyaretcinin cikis istegi guvenle karsilaniyor"
+    }
 } catch { Bad "Logout akisi basarisiz: $($_.Exception.Message)" }
 
 Write-Host "`n=== 6) Acik yonlendirme (open redirect) korumasi ===" -ForegroundColor Cyan

@@ -62,7 +62,7 @@ insan yoktur.
 .\test-all.ps1
 ```
 
-133 otomatik dogrulama testi (6 suite). PART 5 testi token omrunu gecici olarak
+135 otomatik dogrulama testi (6 suite). PART 5 testi token omrunu gecici olarak
 kisalttigi icin toplam ~2 dakika surer. Tek tek de calistirilabilir:
 `.\scripts\verify-part1.ps1` ... `.\scripts\verify-security.ps1`
 
@@ -244,7 +244,7 @@ src/Authtake.Frontend/
   Components/Pages/AdminPanel.razor           Sadece admin
   Components/Pages/ApiTest.razor              200/401/403 canli deneme
   Components/Shared/{RedirectToLogin,AccessDenied}.razor
-scripts/verify-part3.ps1                      33 uctan uca test
+scripts/verify-part3.ps1                      40 uctan uca test
 ```
 
 ### Calistirma
@@ -568,6 +568,28 @@ Daraltirken bir hata yapildi ve testler yakaladi: post-logout adresi olarak
 **`SignedOutCallbackPath`** degerini gonderiyor. Keycloak adresi tanimayinca
 400 donuyor, Keycloak oturumu kapanmiyor ve kullanici bir sonraki istekte
 sessizce yeniden iceri aliniyordu. Dogru adres kaydedildi.
+
+### Bulunan ve kapatilan hata: oturum yokken cikis
+
+RP-initiated logout, Keycloak'a kimin cikis yaptigini soyleyen id_token'i
+`id_token_hint` parametresiyle gonderir. Keycloak 19+ bu parametreyi zorunlu
+tutar: `post_logout_redirect_uri` varken `id_token_hint` yoksa istegi
+**400 "Missing parameters: id_token_hint"** ile reddeder.
+
+`/authentication/logout` her cagrildiginda kosulsuz olarak Keycloak'a cikis
+istegi gonderiyordu. Ortada oturum yoksa gonderilecek bir id_token da olmadigi
+icin kullanici bu hata sayfasini goruyordu.
+
+Sanildigindan kolay olusan bir durumdur:
+
+- Cikis yaptiktan sonra **geri tusuna basmak** (ayni adres yeniden cagrilir)
+- Cikis adresini **yer imine eklemek**
+- Oturum dusmusken **"Cikis Yap"a tiklamak**
+
+Cozum: cikis endpoint'i once saklanan id_token'a bakar. Yoksa Keycloak'a hic
+gitmez &mdash; geride kalmis yerel cookie'yi temizleyip ana sayfaya doner.
+Oturum varken davranis degismedi: tek cikis (single logout) calismaya devam
+ediyor. Iki senaryo da `verify-part3.ps1` icinde kalici teste baglandi.
 
 ### Bilinen, kapatilmayan: cikis GET ile yapiliyor
 
